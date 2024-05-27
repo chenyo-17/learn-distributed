@@ -11,7 +11,9 @@ import "6.5840/mr"
 import "plugin"
 import "os"
 import "log"
-import "io/ioutil"
+
+// import "io/ioutil"
+import "io"
 import "sort"
 
 // for sorting by key.
@@ -22,6 +24,12 @@ func (a ByKey) Len() int           { return len(a) }
 func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
+/*
+ * For each file, input to `mapf` and append the intermediate key-values to `intermediate`
+ * Sort the intermediate key-values by key so same keys are grouped together
+ * For each key, append all values to `values` and call `reducef`
+ * Write each `reducef` output to `mr-out-0`
+ */
 func main() {
 	if len(os.Args) < 3 {
 		fmt.Fprintf(os.Stderr, "Usage: mrsequential xxx.so inputfiles...\n")
@@ -41,7 +49,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("cannot open %v", filename)
 		}
-		content, err := ioutil.ReadAll(file)
+		content, err := io.ReadAll(file)
 		if err != nil {
 			log.Fatalf("cannot read %v", filename)
 		}
@@ -68,6 +76,7 @@ func main() {
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
+		// find the end of this key's values
 		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
 			j++
 		}
