@@ -24,6 +24,21 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 
+// No args are needed when a work feches a task
+type FetchArgs struct{}
+
+// The coordinator reply to a worker's FetchTask request
+type FetchReply struct {
+	// either "map" or "reduce" or "done"
+	// "done" means all tasks are done
+	TaskType string
+	// the reply for a map task is only one input file name
+	// the reply for a reduce task is a list of intermediate folder names
+	TaskLocations []string
+	// the reply for a reduce task is a reduce task number
+	// this field should be ignored if TaskType is "map"
+	ReduceNum int
+}
 
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.
