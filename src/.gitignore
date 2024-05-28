@@ -10,3 +10,6 @@ mrtmp.*
 /main/mrcoordinator
 /main/mrsequential
 /main/mrworker
+main/*.log
+main/mr-int-*/
+main/mr-out*
