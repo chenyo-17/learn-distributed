@@ -260,8 +260,14 @@ func (c *Coordinator) Done() bool {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// c := Coordinator{}
 
-	// write log to a file
-	os.Remove("coordinator.log")
+	// remove all files ending with `.log`
+	for _, file := range files {
+		if file[len(file)-4:] == ".log" {
+			os.Remove(file)
+		}
+	}
+
+	// create a new log file
 	logFile, err := os.Create("coordinator.log")
 	if err != nil {
 		log.Fatal("Cannot create the log file")
