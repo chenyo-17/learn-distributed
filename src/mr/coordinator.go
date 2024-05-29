@@ -16,13 +16,12 @@ type Coordinator struct {
 	// A list of input file names yet to be processed by map tasks
 	// It is initialized as all input files
 	openMapTasks []string
-	// Record the lapsed time of each on going task
-	// A list of folder names that store the intermediate files,
-	// output by each map tasks.
-	// Each file name is a reduce task number.
+	// Map from the input file to the intermediate folder name
+	// the folder name is output by each worker.
 	// Each folder stores the intermediate files of one input file
+	// Each file name in the folder is a reduce task number.
 	// When all map tasks are donw, `len(doneMapTasks) == nFiles`
-	doneMapTasks []string
+	doneMapTasks map[string]string
 	// A list of reduce task numbers yet to be processed by reduce tasks
 	openReduceTasks []int
 	// A list of reduce task numbers that have been processed by reduce tasks,
@@ -71,7 +70,11 @@ func (c *Coordinator) Fetch(args *FetchArgs, reply *FetchReply) error {
 
 		// copy all intermediate folder names to the reply
 		reply.TaskLocations = make([]string, len(c.doneMapTasks))
-		copy(reply.TaskLocations, c.doneMapTasks)
+		i := 0
+		for _, folder := range c.doneMapTasks {
+			reply.TaskLocations[i] = folder
+			i++
+		}
 
 		// assign a reduce task number
 		reply.TaskNum = c.openReduceTasks[0]
@@ -132,7 +135,7 @@ func (c *Coordinator) SubmitMap(args *SubmitMapArgs, reply *SubmitMapReply) erro
 	// add the task to the `doneMapTasks`
 	// the worker only informs the coordinate the folder location once it submits the job
 	// so the coordinator never stores unfinished or crashed folder locations
-	c.doneMapTasks = append(c.doneMapTasks, submitLocation)
+	c.doneMapTasks[taskInput] = submitLocation
 	log.Printf("The coordinator received the map task for %s at %s\n",
 		taskInput, submitLocation)
 
@@ -211,10 +214,9 @@ func (c *Coordinator) isMapTaskDone(task string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for _, doneTask := range c.doneMapTasks {
-		if doneTask == task {
-			return true
-		}
+	_, ok := c.doneMapTasks[task]
+	if ok {
+		return true
 	}
 	return false
 }
@@ -267,17 +269,19 @@ func (c *Coordinator) Done() bool {
 	}
 
 	// clear `mr-int-*` folders
-	dir, err := os.Open(".")
-	if err != nil {
-		log.Fatal("Cannot open the current directory")
-	}
-	dirFles, err := dir.Readdirnames(0)
-	if err != nil {
-		log.Fatal("Cannot read the current directory")
-	}
-	for _, dirFile := range dirFles {
-		if dirFile[:7] == "mr-int-" {
-			os.RemoveAll(dirFile)
+	if ret {
+		dir, err := os.Open(".")
+		if err != nil {
+			log.Fatal("Cannot open the current directory")
+		}
+		dirFles, err := dir.Readdirnames(0)
+		if err != nil {
+			log.Fatal("Cannot read the current directory")
+		}
+		for _, dirFile := range dirFles {
+			if len(dirFile) > 7 && dirFile[:7] == "mr-int-" {
+				os.RemoveAll(dirFile)
+			}
 		}
 	}
 
@@ -302,7 +306,8 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		log.Fatal("Cannot read the current directory")
 	}
 	for _, dirFile := range dirFles {
-		if dirFile[len(dirFile)-4:] == ".log" || dirFile[:7] == "mr-out-" {
+		if (len(dirFile) > 4 && dirFile[len(dirFile)-4:] == ".log") ||
+			(len(dirFile) > 7 && dirFile[:7] == "mr-out-") {
 			os.Remove(dirFile)
 		}
 	}
@@ -316,7 +321,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
 	// Your code here.
 	// initialize the coordinator
-	c := Coordinator{openMapTasks: files}
+	c := Coordinator{openMapTasks: files, doneMapTasks: make(map[string]string)}
 	nFiles = len(files)
 	nReduceTasks = nReduce
 	for i := 0; i < nReduce; i++ {
