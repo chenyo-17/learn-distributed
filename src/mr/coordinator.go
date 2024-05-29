@@ -103,13 +103,24 @@ func (c *Coordinator) Fetch(args *FetchArgs, reply *FetchReply) error {
 
 // When a worker submits a map task, the coordinator updates the task status,
 func (c *Coordinator) SubmitMap(args *SubmitMapArgs, reply *SubmitMapReply) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	taskInput := args.TaskInput
 	submitLocation := args.SubmitLocation
 
-	// remove the task from the `openMapTasks`
+	// If one worker stalls and submit the job that has been done by another worker,
+	// the coordinator should not read the task
+	// This check must be before `c.mu.Lock()`
+	if c.isMapTaskDone(taskInput) {
+		log.Printf("The coordinator ignored the duplicate map task for %s at %s\n",
+			taskInput, submitLocation)
+		return nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// remove the task from the `openMapTasks` if it is still there
+	// this can happen when the worker submits the task right after the
+	// coordinator times out the task
 	for i, task := range c.openMapTasks {
 		if task == taskInput {
 			c.openMapTasks = append(c.openMapTasks[:i],
@@ -121,26 +132,25 @@ func (c *Coordinator) SubmitMap(args *SubmitMapArgs, reply *SubmitMapReply) erro
 	// add the task to the `doneMapTasks`
 	// the worker only informs the coordinate the folder location once it submits the job
 	// so the coordinator never stores unfinished or crashed folder locations
-	// however, if one worker stalls and submit the job that has been done by another worker,
-	// the coordinator should not readd the task
-	if !c.isMapTaskDone(submitLocation) {
-		c.doneMapTasks = append(c.doneMapTasks, submitLocation)
-		log.Printf("The coordinator received the map task for %s at %s\n",
-			taskInput, submitLocation)
-	} else {
-		log.Printf("The coordinator ignored the duplicate map task for %s at %s\n",
-			taskInput, submitLocation)
-	}
+	c.doneMapTasks = append(c.doneMapTasks, submitLocation)
+	log.Printf("The coordinator received the map task for %s at %s\n",
+		taskInput, submitLocation)
 
 	return nil
 }
 
 func (c *Coordinator) SubmitReduce(args *SubmitReduceArgs, reply *SubmitReduceReply) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	reduceNum := args.ReduceNum
 	submitLocation := args.SubmitLocation
+
+	if c.isReduceTaskDone(reduceNum) {
+		log.Printf("The coordinator ignored the duplicate reduce task for %d at %s\n",
+			reduceNum, submitLocation)
+		return nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	// remove the task from the `openReduceTasks`
 	for i, task := range c.openReduceTasks {
@@ -152,14 +162,9 @@ func (c *Coordinator) SubmitReduce(args *SubmitReduceArgs, reply *SubmitReduceRe
 	}
 
 	// add the task to the `doneReduceTasks`
-	if !c.isReduceTaskDone(reduceNum) {
-		c.doneReduceTasks = append(c.doneReduceTasks, reduceNum)
-		log.Printf("The coordinator received the reduce task for %d at %s\n",
-			reduceNum, submitLocation)
-	} else {
-		log.Printf("The coordinator ignored the duplicate reduce task for %d at %s\n",
-			reduceNum, submitLocation)
-	}
+	c.doneReduceTasks = append(c.doneReduceTasks, reduceNum)
+	log.Printf("The coordinator received the reduce task for %d at %s\n",
+		reduceNum, submitLocation)
 
 	return nil
 }
