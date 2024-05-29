@@ -266,6 +266,21 @@ func (c *Coordinator) Done() bool {
 		ret = true
 	}
 
+	// clear `mr-int-*` folders
+	dir, err := os.Open(".")
+	if err != nil {
+		log.Fatal("Cannot open the current directory")
+	}
+	dirFles, err := dir.Readdirnames(0)
+	if err != nil {
+		log.Fatal("Cannot read the current directory")
+	}
+	for _, dirFile := range dirFles {
+		if dirFile[:7] == "mr-int-" {
+			os.RemoveAll(dirFile)
+		}
+	}
+
 	// Your code here.
 
 	return ret
@@ -278,9 +293,17 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// c := Coordinator{}
 
 	// remove all files ending with `.log` or starting with `mr-out-`
-	for _, file := range files {
-		if file[len(file)-4:] == ".log" || file[:7] == "mr-out-" {
-			os.Remove(file)
+	dir, err := os.Open(".")
+	if err != nil {
+		log.Fatal("Cannot open the current directory")
+	}
+	dirFles, err := dir.Readdirnames(0)
+	if err != nil {
+		log.Fatal("Cannot read the current directory")
+	}
+	for _, dirFile := range dirFles {
+		if dirFile[len(dirFile)-4:] == ".log" || dirFile[:7] == "mr-out-" {
+			os.Remove(dirFile)
 		}
 	}
 
