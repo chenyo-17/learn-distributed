@@ -121,9 +121,16 @@ func (c *Coordinator) SubmitMap(args *SubmitMapArgs, reply *SubmitMapReply) erro
 	// add the task to the `doneMapTasks`
 	// the worker only informs the coordinate the folder location once it submits the job
 	// so the coordinator never stores unfinished or crashed folder locations
-	c.doneMapTasks = append(c.doneMapTasks, submitLocation)
-	log.Printf("The coordinator received the map task for %s at %s\n",
-		taskInput, submitLocation)
+	// however, if one worker stalls and submit the job that has been done by another worker,
+	// the coordinator should not readd the task
+	if !c.isMapTaskDone(submitLocation) {
+		c.doneMapTasks = append(c.doneMapTasks, submitLocation)
+		log.Printf("The coordinator received the map task for %s at %s\n",
+			taskInput, submitLocation)
+	} else {
+		log.Printf("The coordinator ignored the duplicate map task for %s at %s\n",
+			taskInput, submitLocation)
+	}
 
 	return nil
 }
@@ -145,9 +152,14 @@ func (c *Coordinator) SubmitReduce(args *SubmitReduceArgs, reply *SubmitReduceRe
 	}
 
 	// add the task to the `doneReduceTasks`
-	c.doneReduceTasks = append(c.doneReduceTasks, reduceNum)
-	log.Printf("The coordinator received the reduce task for %d at %s\n",
-		reduceNum, submitLocation)
+	if !c.isReduceTaskDone(reduceNum) {
+		c.doneReduceTasks = append(c.doneReduceTasks, reduceNum)
+		log.Printf("The coordinator received the reduce task for %d at %s\n",
+			reduceNum, submitLocation)
+	} else {
+		log.Printf("The coordinator ignored the duplicate reduce task for %d at %s\n",
+			reduceNum, submitLocation)
+	}
 
 	return nil
 }
@@ -215,13 +227,13 @@ func (c *Coordinator) isReduceTaskDone(task int) bool {
 	return false
 }
 
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
-	return nil
-}
+// // an example RPC handler.
+// //
+// // the RPC argument and reply types are defined in rpc.go.
+// func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
+// 	reply.Y = args.X + 1
+// 	return nil
+// }
 
 // start a thread that listens for RPCs from worker.go
 func (c *Coordinator) server() {
@@ -260,9 +272,9 @@ func (c *Coordinator) Done() bool {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// c := Coordinator{}
 
-	// remove all files ending with `.log`
+	// remove all files ending with `.log` or starting with `mr-out-`
 	for _, file := range files {
-		if file[len(file)-4:] == ".log" {
+		if file[len(file)-4:] == ".log" || file[:7] == "mr-out-" {
 			os.Remove(file)
 		}
 	}
