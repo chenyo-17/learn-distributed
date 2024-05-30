@@ -175,8 +175,6 @@ func (c *Coordinator) SubmitReduce(args *SubmitReduceArgs, reply *SubmitReduceRe
 // Maximum waiting time for a task to be done
 var MaxTaskDuration = 10 * time.Second
 
-// TODO: consider more generic functions to monior the status of any task
-
 // Whenever the coordinator assigns a map task, it also creates a goroutine
 // to monitor the task status. It checks the task status after `MaxTaskTime` second,
 // if the task is not done, the coordinator will reassign the task.
