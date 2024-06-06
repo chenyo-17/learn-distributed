@@ -10,6 +10,7 @@ type PutAppendArgs struct {
 }
 
 type PutAppendReply struct {
+	// Return the value after the operation
 	Value string
 }
 
