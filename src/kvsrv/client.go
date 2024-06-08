@@ -3,6 +3,7 @@ package kvsrv
 import (
 	"crypto/rand"
 	"math/big"
+	"os"
 
 	"6.5840/labrpc"
 )
@@ -10,6 +11,8 @@ import (
 type Clerk struct {
 	server *labrpc.ClientEnd
 	// You will have to modify this struct.
+	pid int
+	seq int
 }
 
 func nrand() int64 {
@@ -23,11 +26,12 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.server = server
 	// You'll have to add code here.
+	ck.pid = os.Getpid()
+	ck.seq = 0
 	return ck
 }
 
-// fetch the current value for a key.
-// returns "" if the key does not exist.
+// fetch the current value for a key. returns "" if the key does not exist.
 // keeps trying forever in the face of all other errors.
 //
 // you can send an RPC with code like this:
@@ -39,7 +43,8 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
-	args := GetArgs{Key: key}
+	ck.seq = ck.seq + 1
+	args := GetArgs{Key: key, Pid: ck.pid, Seq: ck.seq}
 	reply := GetReply{}
 
 	ok := ck.server.Call("KVServer.Get", &args, &reply)
@@ -63,7 +68,9 @@ func (ck *Clerk) Get(key string) string {
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You will have to modify this function.
-	args := PutAppendArgs{Key: key, Value: value}
+	// increase the seq number by 1 for every new request
+	ck.seq = ck.seq + 1
+	args := PutAppendArgs{Key: key, Value: value, Pid: ck.pid, Seq: ck.seq}
 	reply := PutAppendReply{}
 
 	ok := false

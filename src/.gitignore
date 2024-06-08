@@ -13,3 +13,4 @@ mrtmp.*
 main/*.log
 main/mr-int-*/
 main/mr-out*
+*/*.log
