@@ -47,10 +47,9 @@ func (ck *Clerk) Get(key string) string {
 	args := GetArgs{Key: key, Cid: ck.cid, Seq: ck.seq}
 	reply := GetReply{}
 
-	ok := ck.server.Call("KVServer.Get", &args, &reply)
-
 	// keep trying until ok
 	for {
+		ok := ck.server.Call("KVServer.Get", &args, &reply)
 		if ok {
 			return reply.Value
 		}
@@ -73,16 +72,14 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	args := PutAppendArgs{Key: key, Value: value, Cid: ck.cid, Seq: ck.seq}
 	reply := PutAppendReply{}
 
-	ok := false
-
-	switch op {
-	case "Put":
-		ok = ck.server.Call("KVServer.Put", &args, &reply)
-	case "Append":
-		ok = ck.server.Call("KVServer.Append", &args, &reply)
-	}
-
 	for {
+		ok := false
+		switch op {
+		case "Put":
+			ok = ck.server.Call("KVServer.Put", &args, &reply)
+		case "Append":
+			ok = ck.server.Call("KVServer.Append", &args, &reply)
+		}
 		if ok {
 			return reply.Value
 		}
