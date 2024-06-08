@@ -2,12 +2,10 @@ package kvsrv
 
 import (
 	"log"
-	"os"
-	"strings"
 	"sync"
 )
 
-const Debug = true
+const Debug = false
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -48,34 +46,9 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
-	cur := args.Seq
-	last := kv.acks[args.Cid].Seq
-
-	DPrintf("%v gets the value of %v in seq no. %v:", args.Cid, args.Key, cur)
-
-	// Assume the client keeps sending the same request until it receives the reply
-	// either `cur == last` or `cur == last + 1`
-	if cur == last {
-		if kv.acks[args.Cid].Latest {
-			reply.Value = kv.kvs[args.Key]
-		} else {
-			reply.Value = kv.acks[args.Cid].Value
-		}
-		DPrintf("Return to %v the cached value for %v", args.Cid, args.Key)
-	} else {
-		if cur != last+1 {
-			log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
-		}
-		// new request
-		// return "" if the key is not stored
-		reply.Value = kv.kvs[args.Key]
-		// DPrintf("Return to %v the latest value from the kvs for %v: %v", args.Pid, args.Key, reply.Value)
-		// a new request gets the latest value
-		kv.acks[args.Cid] = Ack{Seq: cur, Op: "Get", Key: args.Key, Latest: true}
-		DPrintf("Update the cache for %v: seq: %v", args.Cid, cur)
-
-	}
-	// DPrintf("Get(%v) = %v", args.Key, reply.Value)
+	// `Get` can always return the latest value
+	// this satisfies the linearizability, according to example 7 in the lec 4 notes
+	reply.Value = kv.kvs[args.Key]
 }
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
@@ -83,52 +56,19 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
-	DPrintf("%v puts %v in seq no %v", args.Cid, args.Key, args.Seq)
-
 	cur := args.Seq
 	last := kv.acks[args.Cid].Seq
 
-	if cur == last {
-		if kv.acks[args.Cid].Latest {
-			reply.Value = kv.kvs[args.Key]
-		} else {
-			reply.Value = kv.acks[args.Cid].Value
-		}
-		DPrintf("Return to %v the cached value for %v", args.Cid, args.Key)
-	} else {
-		if cur != last+1 {
-			log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
-		}
-		// before the server updates the `kvs`, it should first
-		// cache the old value in `acks`, and the ack is no more the latest
-		for cid, ack := range kv.acks {
-			if cid == args.Cid {
-				continue
-			}
-			if ack.Op == "Put" && ack.Key == args.Key && ack.Latest {
-				// // these acks are no more the latest
-				kv.acks[cid] = Ack{Seq: kv.acks[cid].Seq, Op: "Put", Key: args.Key, Latest: false, Value: kv.kvs[args.Key]}
-				// ack.Value = kv.kvs[args.Key]
-				// ack.Latest = false
-			} else if ack.Op == "Append" && ack.Key == args.Key && ack.Latest {
-				// the old value should exclude the last appended value
-				// ack.Value = strings.TrimSuffix(kv.kvs[args.Key], kv.lastAppend[args.Key])
-				// ack.Latest = false
-				kv.acks[cid] = Ack{Seq: kv.acks[cid].Seq, Op: "Append", Key: args.Key,
-					Latest: false,
-					Value:  strings.TrimSuffix(kv.kvs[args.Key], kv.lastAppend[args.Key])}
-				DPrintf("Update other cache for %v: %v", cid, kv.acks[cid])
-			}
-		}
+	// if the server has seen the seq no. before, do nothing
+	// (`Put` does not need a reply)
+	// if not, execute the request
+	// `cur` may not be `last+1` as `Get` request is not recorded
+	if cur > last {
 		kv.kvs[args.Key] = args.Value
-		DPrintf("Update the kvs for %v: %v", args.Key, kv.kvs[args.Key])
-		reply.Value = kv.kvs[args.Key]
-		DPrintf("Return to %v the latest value from the kvs for %v", args.Cid, args.Key)
-		kv.acks[args.Cid] = Ack{Seq: cur, Op: "Put", Key: args.Key, Latest: true}
-		DPrintf("Update the cache for %v: seq: %v", args.Cid, cur)
+		// only record the seq. no, not value is needed
+		// this is a client only sends one request a time
+		kv.acks[args.Cid] = Ack{Seq: cur}
 	}
-
-	// DPrintf("Put(%v) = %v", args.Key, reply.Value)
 }
 
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
@@ -136,55 +76,16 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
-	DPrintf("%v appends the value of %v in seq no. %v: %v", args.Cid, args.Key, args.Seq, args.Value)
-
 	cur := args.Seq
 	last := kv.acks[args.Cid].Seq
 
 	if cur == last {
-		if kv.acks[args.Cid].Latest {
-			reply.Value = strings.TrimSuffix(kv.kvs[args.Key], kv.lastAppend[args.Key])
-			DPrintf("%v gets the latest value of %v: %v", args.Cid, args.Key, reply.Value)
-		} else {
-			reply.Value = kv.acks[args.Cid].Value
-			DPrintf("Return to %v the cached value for %v", args.Cid, args.Key)
-		}
+		reply.Value = kv.acks[args.Cid].Value
 	} else {
-		if cur != last+1 {
-			log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
-		}
-		for cid, ack := range kv.acks {
-			if cid == args.Cid {
-				continue
-			}
-			if ack.Op == "Put" && ack.Key == args.Key && ack.Latest {
-				// these acks are no more the latest
-				kv.acks[cid] = Ack{Seq: kv.acks[cid].Seq, Op: "Append", Key: args.Key, Latest: false, Value: kv.kvs[args.Key]}
-				// ack.Value = kv.kvs[args.Key]
-				// ack.Latest = false
-			} else if ack.Op == "Append" && ack.Key == args.Key && ack.Latest {
-				// the old value should exclude the last appended value
-				kv.acks[cid] = Ack{Seq: kv.acks[cid].Seq, Op: "Append", Key: args.Key,
-					Latest: false,
-					Value:  strings.TrimSuffix(kv.kvs[args.Key], kv.lastAppend[args.Key])}
-				// ack.Value = strings.TrimSuffix(kv.kvs[args.Key], kv.lastAppend[args.Key])
-				// ack.Latest = false
-				DPrintf("Update the other cache for %v: %v", cid, kv.acks[cid])
-			}
-		}
-		DPrintf("Receive a new request for %v from %v", args.Key, args.Cid)
-		// returns old value!
 		reply.Value = kv.kvs[args.Key]
-		DPrintf("Return to %v the old value for %v: %v", args.Cid, args.Key, reply.Value)
 		kv.kvs[args.Key] = kv.kvs[args.Key] + args.Value
-		kv.lastAppend[args.Key] = args.Value
-		DPrintf("Update the kvs for %v: %v", args.Key, kv.kvs[args.Key])
-		DPrintf("Update the lastAppend for %v: %v", args.Key, kv.lastAppend[args.Key])
-		kv.acks[args.Cid] = Ack{Seq: cur, Op: "Append", Key: args.Key, Latest: true}
-		DPrintf("Update the cache for %v: seq: %v: latest", args.Cid, cur)
+		kv.acks[args.Cid] = Ack{Seq: cur, Value: reply.Value}
 	}
-
-	// DPrintf("Append(%v) = %v", args.Key, reply.Value)
 }
 
 func StartKVServer() *KVServer {
@@ -193,13 +94,5 @@ func StartKVServer() *KVServer {
 	// You may need initialization code here.
 	kv.kvs = make(map[string]string)
 	kv.acks = make(map[int64]Ack)
-	kv.lastAppend = make(map[string]string)
-
-	logFile, err := os.Create("server.log")
-	if err != nil {
-		log.Fatal("Cannot create the log file")
-	}
-	log.SetOutput(logFile)
-
 	return kv
 }
