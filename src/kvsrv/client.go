@@ -15,6 +15,7 @@ type Clerk struct {
 	seq int64
 }
 
+// TODO: make sure no two clients have the same `cid`
 func nrand() int64 {
 	max := big.NewInt(int64(1) << 62)
 	bigx, _ := rand.Int(rand.Reader, max)
