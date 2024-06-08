@@ -47,16 +47,16 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		reply.Value = kv.acks[args.Pid].Value
 		DPrintf("Return to %v the cached value for %v: %v", args.Pid, args.Key, reply.Value)
 	} else {
-		if cur != last+1 {
-			log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
-		}
+		// if cur != last+1 {
+		// 	log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
+		// }
 		// new request
 		// return "" if the key is not stored
 		reply.Value = kv.kvs[args.Key]
 		DPrintf("Return to %v the latest value from the kvs for %v: %v", args.Pid, args.Key, reply.Value)
 		// update `kv.acks`
-		kv.acks[args.Pid] = Ack{Seq: cur, Value: reply.Value}
-		DPrintf("Update the cache for %v: seq: %v, value: %v", args.Pid, cur, reply.Value)
+		// kv.acks[args.Pid] = Ack{Seq: cur, Value: reply.Value}
+		// DPrintf("Update the cache for %v: seq: %v, value: %v", args.Pid, cur, reply.Value)
 
 	}
 	// DPrintf("Get(%v) = %v", args.Key, reply.Value)
@@ -76,15 +76,15 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 		reply.Value = kv.acks[args.Pid].Value
 		DPrintf("Return to %v the cached value for %v: %v", args.Pid, args.Key, reply.Value)
 	} else {
-		if cur != last+1 {
-			log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
-		}
+		// if cur != last+1 {
+		// 	log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
+		// }
 		kv.kvs[args.Key] = args.Value
 		DPrintf("Update the kvs for %v: %v", args.Key, args.Value)
 		reply.Value = kv.kvs[args.Key]
 		DPrintf("Return to %v the latest value from the kvs for %v: %v", args.Pid, args.Key, reply.Value)
-		kv.acks[args.Pid] = Ack{Seq: cur, Value: reply.Value}
-		DPrintf("Update the cache for %v: seq: %v, value: %v", args.Pid, cur, reply.Value)
+		// kv.acks[args.Pid] = Ack{Seq: cur, Value: reply.Value}
+		// DPrintf("Update the cache for %v: seq: %v, value: %v", args.Pid, cur, reply.Value)
 	}
 
 	// DPrintf("Put(%v) = %v", args.Key, reply.Value)
@@ -104,16 +104,16 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 		reply.Value = kv.acks[args.Pid].Value
 		DPrintf("Return to %v the cached value for %v: %v", args.Pid, args.Key, reply.Value)
 	} else {
-		if cur != last+1 {
-			log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
-		}
+		// if cur != last+1 {
+		// 	log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
+		// }
 		// returns old value!
 		reply.Value = kv.kvs[args.Key]
 		DPrintf("Return to %v the old value from the kvs for %v: %v", args.Pid, args.Key, reply.Value)
 		kv.kvs[args.Key] = kv.kvs[args.Key] + args.Value
 		DPrintf("Update the kvs for %v: %v", args.Key, kv.kvs[args.Key])
-		kv.acks[args.Pid] = Ack{Seq: cur, Value: reply.Value}
-		DPrintf("Update the cache for %v: seq: %v, value: %v", args.Pid, cur, reply.Value)
+		// kv.acks[args.Pid] = Ack{Seq: cur, Value: reply.Value}
+		// DPrintf("Update the cache for %v: seq: %v, value: %v", args.Pid, cur, reply.Value)
 	}
 
 	// DPrintf("Append(%v) = %v", args.Key, reply.Value)
