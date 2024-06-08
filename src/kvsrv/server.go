@@ -81,11 +81,11 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 		// 	log.Fatalf("The server receives an out-of-order seq no.: %v, last: %v", cur, last)
 		// }
 		kv.kvs[args.Key] = args.Value
-		DPrintf("Update the kvs for %v", args.Key)
-		reply.Value = kv.kvs[args.Key]
-		DPrintf("Return to %v the latest value from the kvs for %v", args.Cid, args.Key)
-		kv.acks[args.Cid] = Ack{Seq: cur, Value: reply.Value}
-		DPrintf("Update the cache for %v: seq: %v", args.Cid, cur)
+		// DPrintf("Update the kvs for %v", args.Key)
+		// reply.Value = kv.kvs[args.Key]
+		// DPrintf("Return to %v the latest value from the kvs for %v", args.Cid, args.Key)
+		// kv.acks[args.Cid] = Ack{Seq: cur, Value: reply.Value}
+		// DPrintf("Update the cache for %v: seq: %v", args.Cid, cur)
 	}
 
 	// DPrintf("Put(%v) = %v", args.Key, reply.Value)
