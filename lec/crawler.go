@@ -92,11 +92,11 @@ func worker(url string, ch chan []string, fetcher Fetcher) {
 func coordinator(ch chan []string, fetcher Fetcher) {
 	n := 1 // count unprocessed urls
 	fetched := make(map[string]bool)
-	// receive urls from the channel repeatedly until the channel is closed
+	// receive urls from the channel repeatedly until the channel is closed, e.g., no workers
 	// cannot manually read the channel with `urls := <-ch`
-	// because the receiver blocks the channel until it reads somethings,
-	// which causes a deadlock as the sender can never send anything
-	// so when the received values are unknown, use `for range` only!
+	// because the coordinator is blocked until it reads somethings,
+	// which causes a deadlock as the senders/workers are only spwaned in the worker
+	// so a deadlock occurs!
 	for urls := range ch {
 		for _, u := range urls {
 			if fetched[u] == false {
