@@ -44,8 +44,7 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
-	ck.seq = ck.seq + 1
-	args := GetArgs{Key: key, Cid: ck.cid, Seq: ck.seq}
+	args := GetArgs{Key: key}
 	reply := GetReply{}
 
 	// keep trying until ok

@@ -15,16 +15,10 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 }
 
 type Ack struct {
-	Seq   int64
+	// the last seq no. the server has replied
+	Seq int64
+	// the reply (i.e., `Value`) itself, only for `Append`
 	Value string
-	// "Put" or "Append"
-	Op string
-	// the key for the value
-	Key string
-	// when a client sends a new request,
-	// the server should return the current `kvs` value,
-	// in this case, `Latest` is set to true, and `Value` is ignored
-	Latest bool
 }
 
 type KVServer struct {
@@ -36,9 +30,6 @@ type KVServer struct {
 	// a map from a pid to the last seq no. the server has replied
 	// and the reply (i.e., `Value`) itself
 	acks map[int64]Ack
-	// store the last appended value for each key
-	// this is used to compute the cached value for each ack
-	lastAppend map[string]string
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
