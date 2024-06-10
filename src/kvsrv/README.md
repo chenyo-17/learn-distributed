@@ -3,7 +3,7 @@
 ## Some notes
 
 - Although this lab is marked as easy, I was still stuck for quite a while to pass all tests. The reason in the end was I did not read the [lecture notes](https://pdos.csail.mit.edu/6.824/notes/l-linearizability.txt) and the lab instructions carefully. The mistakes I made include:
-  - I forgot the `Get` request can always either read old or new values even if the request is retransmitted.
+  - I forgot the `Get` request can always read the latest values even if the request is retransmitted.
   - I didn't realize that the server does not need to reply the `Put` request.
 - Due to these mistakes, I couldn't pass most memory tests and spent long time optimizing the wrong direction.
 
@@ -30,7 +30,8 @@
   - `kvs`: the key-value map that always stores the latest values for each key
   - `acks`: a map from a `cid` to `Ack`, which stores the last `Seq` and `Value` (only for `Append` requests) the server has replied to it.
 - When the server receives a `Get` request, it always replies the latest value `kvs[args.Key]` without updating `acks`. 
-  - This is linearizable as the `Get` is a read-only request (see example 7 in the lecture notes for details).
+  - This is linearizable, see example 7 in the lecture notes for details.
+  - But note that it is no more linealizable if the server replies any value, e.g., the server cannot reply an old value if it has replied a newer value to the client, see example 2 in the lecture notes for details.
 - When the server receives a `Put` request from a client `cid`, it first checks whether it has seen the request before. If `acks[cid].Seq == args.Seq`, then the server does nothing, otherwise it updates `kvs[args.Key]` and stores `args.Seq` in `acks[cid]`.
   - If the server re-executes the same `Put` requests twice, it breaks the linearizability, see example 6 in the lecture notes for details.
 - When the server receives a `Append` request, it firsts checks whether the request is a retransmission as in checking a `Put` request:
