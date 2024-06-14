@@ -358,6 +358,7 @@ func (rf *Raft) becomeLeader() {
 	defer rf.mu.Unlock()
 
 	rf.isLeader = true
+	rf.votedFor = -1 // the vote is not outdated
 
 	// initialize the leader's state
 	rf.nextIndex = make([]int, len(rf.peers))
@@ -405,6 +406,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 	// Your code here, if desired.
+	DPrintf("Server %d is killed", rf.me)
 }
 
 func (rf *Raft) killed() bool {
@@ -487,6 +489,10 @@ func (rf *Raft) ticker() {
 			if validAppendReceived || voteGranted {
 				// remain as a follower
 				DPrintf("Follower %d remains a follower", rf.me)
+				// reset the `votedFor` since it is now outdated
+				rf.mu.Lock()
+				rf.votedFor = -1
+				rf.mu.Unlock()
 				continue
 			} else {
 				// become a candidate start an election
