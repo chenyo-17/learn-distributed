@@ -421,7 +421,12 @@ func (rf *Raft) ticker() {
 		// Your code here (3A)
 
 		// if the server is a leader, send the heartbeats periodically
-		if rf.isLeader {
+		rf.mu.Lock()
+		isLeader := rf.isLeader
+		isCandidate := rf.isCandidate
+		rf.mu.Unlock()
+
+		if isLeader {
 			// a leader is never replaced unless it is killed
 			for i := 0; i < len(rf.peers); i++ {
 				if i == rf.me {
@@ -432,9 +437,9 @@ func (rf *Raft) ticker() {
 			}
 			time.Sleep(heartbeatPeriod)
 
-		} else if rf.isCandidate {
+		} else if isCandidate {
 			// wait to gather enough votes
-			electionTimeout := 500 + (rand.Int63() % 800)
+			electionTimeout := 300 + (rand.Int63() % 1000)
 			time.Sleep(time.Duration(electionTimeout) * time.Millisecond)
 
 			// get the current states
@@ -450,6 +455,9 @@ func (rf *Raft) ticker() {
 			if validAppendReceived {
 				// fall back to a follower
 				rf.isCandidate = false
+				rf.mu.Lock()
+				rf.votedFor = -1 // clear the old vote
+				rf.mu.Unlock()
 				DPrintf("Candidate %d falls back to a follower", rf.me)
 			} else {
 				// check the votes
@@ -474,7 +482,7 @@ func (rf *Raft) ticker() {
 			}
 		} else { // the server is a follower
 			// wait for the election timeout
-			electionTimeout := 500 + (rand.Int63() % 800)
+			electionTimeout := 300 + (rand.Int63() % 500)
 			time.Sleep(time.Duration(electionTimeout) * time.Millisecond)
 
 			// get the current states
