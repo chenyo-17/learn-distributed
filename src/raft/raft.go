@@ -318,18 +318,29 @@ func (rf *Raft) sendRequestVote(server int) {
 	ok := rf.peers[server].Call("Raft.RequestVote", &args, &reply)
 	if ok {
 		rf.mu.Lock()
+		currentTerm := rf.currentTerm
+		rf.mu.Unlock()
 		// compare the terms
-		if reply.Term > rf.currentTerm {
+		if reply.Term > currentTerm {
+			rf.mu.Lock()
 			rf.currentTerm = reply.Term
 			// fall back to a follower
 			rf.isLeader = false
 			rf.isCandidate = false
+			rf.mu.Unlock()
 			DPrintf("Candidate %d falls back to a follower due to the outdated term", rf.me)
 		} else if reply.Success {
+			rf.mu.Lock()
 			rf.receivedVotes += 1
+			receivedVotes := rf.receivedVotes
+			rf.mu.Unlock()
 			DPrintf("Candidate %d receives a vote from server %d", rf.me, server)
+			if receivedVotes > len(rf.peers)/2 {
+				// immediately becomes a leader
+				rf.becomeLeader()
+				DPrintf("Candidate %d becomes a leader with %d votes", rf.me, receivedVotes)
+			}
 		}
-		rf.mu.Unlock()
 	}
 }
 
@@ -398,7 +409,6 @@ func (rf *Raft) becomeCandidate() {
 	rf.currentTerm += 1
 	// consider as no leader currently
 	rf.currentLeader = -1
-
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -471,13 +481,11 @@ func (rf *Raft) ticker() {
 
 		} else if isCandidate {
 
-			voteWaitTimeout := 10 + (rand.Int63() % 200)
-			time.Sleep(time.Duration(voteWaitTimeout) * time.Millisecond)
+			time.Sleep(time.Duration(500 * time.Millisecond))
 
 			// get the current states
 			rf.mu.Lock()
 			validAppendReceived := rf.validAppendReceived
-			receivedVotes := rf.receivedVotes
 			// reset
 			rf.voteGranted = false
 			rf.validAppendReceived = false
@@ -490,30 +498,23 @@ func (rf *Raft) ticker() {
 				DPrintf("Candidate %d falls back to a follower due to seeing a new leader", rf.me)
 				continue
 			} else {
-				// check the votes
-				if receivedVotes > len(rf.peers)/2 {
-					// becomes a leader
-					rf.becomeLeader()
-					DPrintf("Candidate %d becomes a leader with %d votes", rf.me, receivedVotes)
-					continue
-				} else {
-					// remain as a candidate
-					rf.becomeCandidate()
-					DPrintf("Candidate %d remains a candidate due to not enough votes", rf.me)
-					// send vote requests
-					for i := 0; i < len(rf.peers); i++ {
-						if i == rf.me {
-							continue
-						}
-						go rf.sendRequestVote(i)
+				// if it has received enough votes, it has already become a leader
+				// remain as a candidate
+				rf.becomeCandidate()
+				DPrintf("Candidate %d remains a candidate due to not enough votes", rf.me)
+				// send vote requests
+				for i := 0; i < len(rf.peers); i++ {
+					if i == rf.me {
+						continue
 					}
-					continue
+					go rf.sendRequestVote(i)
 				}
+				continue
 			}
 
 		} else { // the server is a follower
 
-			electionTimeout := 500 + (rand.Int63() % 800)
+			electionTimeout := 200 + (rand.Int63() % 1000)
 			time.Sleep(time.Duration(electionTimeout) * time.Millisecond)
 
 			// get the current states
@@ -525,6 +526,7 @@ func (rf *Raft) ticker() {
 			rf.validAppendReceived = false
 			rf.receivedVotes = 1
 			rf.mu.Unlock()
+
 			if validAppendReceived || voteGranted {
 				// remain as a follower
 				DPrintf("Follower %d remains a follower", rf.me)
