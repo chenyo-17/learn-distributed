@@ -86,6 +86,7 @@ type Raft struct {
 
 	validAppendReceived bool // whether a Valid AppendEntries is received
 	voteGranted         bool // whether the server has granted a vote
+	currentLeader       int  // the current leader
 
 	receivedVotes int // the number of votes received in one election
 
@@ -169,8 +170,8 @@ type RequestVoteArgs struct {
 // field names must start with capital letters!
 type RequestVoteReply struct {
 	// Your data here (3A).
-	Term        int  // a server's `currentTerm`
-	VoteGranted bool // whether the follower accepts the vote request
+	Term    int  // a server's `currentTerm`
+	Success bool // whether the follower accepts the vote request
 }
 
 // example RequestVote RPC handler.
@@ -178,31 +179,36 @@ type RequestVoteReply struct {
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (3A, 3B).
 	if rf.killed() {
-		reply.VoteGranted = false
+		return
 	} else {
-		// 1. check whether `Term >= rf.currentTerm`
-		// 2. check whether the server has voted for someone else
-		// 3. check whether the candidate has up-to-date log
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
-		if args.Term < rf.currentTerm {
-			reply.VoteGranted = false
-		} else if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
-			reply.VoteGranted = false
-		} else if args.LastLogTerm > rf.commitIndex ||
-			(args.LastLogTerm == rf.commitIndex && args.LastLogIndex >= rf.lastLogIndex) {
-			reply.VoteGranted = true
-			reply.Term = rf.currentTerm
-			rf.voteGranted = true
-		} else {
-			reply.VoteGranted = false
-		}
-		// 4. check whether the own term is outdated
+		// 0. check whether the own term is outdated
 		if args.Term > rf.currentTerm {
 			rf.currentTerm = args.Term
 			// fall back to a follower
 			rf.isLeader = false
 			rf.isCandidate = false
+			if rf.isCandidate {
+				DPrintf("Candidate %d falls back to a follower due to the outdated term", rf.me)
+			} else if rf.isLeader {
+				DPrintf("Leader %d falls back to a follower due to the outdated term", rf.me)
+			}
+		}
+		reply.Term = rf.currentTerm
+		// 1. check whether `Term >= rf.currentTerm`
+		// 2. check whether the server has voted for someone else
+		// 3. check whether the candidate has up-to-date log
+		if args.Term < rf.currentTerm {
+			reply.Success = false
+		} else if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
+			reply.Success = false
+		} else if args.LastLogTerm > rf.lastLogTerm ||
+			(args.LastLogTerm == rf.lastLogTerm && args.LastLogIndex >= rf.lastLogIndex) {
+			reply.Success = true
+			rf.voteGranted = true
+		} else {
+			reply.Success = false
 		}
 		DPrintf("Server %d receives a vote request from candidate %d, args: %v, reply: %v", rf.me, args.CandidateId, args, reply)
 	}
@@ -212,10 +218,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 type AppendEntriesArgs struct {
 	Term         int // the leader's term
 	LeaderId     int
-	LastLogIndex int // the last log entry before the new ones
-	LastLogTerm  int // the term of the last log entry
-	// Entries      []*KVCommand // a list of log entries to append, empty for the heartbeat
-	LeaderCommit int // the leader's `CommitIndex`
+	PrevLogIndex int          // the last log entry before the new ones
+	PrevLogTerm  int          // the term of the last log entry before the new ones
+	Entries      []*KVCommand // a list of log entries to append, empty for the heartbeat
+	LeaderCommit int          // the leader's `CommitIndex`
 }
 
 type AppendEntriesReply struct {
@@ -226,19 +232,32 @@ type AppendEntriesReply struct {
 // A server handles an AppendEntries request
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	if rf.killed() {
-		reply.Success = false
+		return
 	} else {
-		// 1. check whether `args.Term >= rf.currentTerm`
-		// 2. check whether the server's log entry at `args.PrevLogIndex` is `args.PrevLogTerm`
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
+		// 0. check whether the own term is outdated
+		if args.Term > rf.currentTerm {
+			rf.currentTerm = args.Term
+			// fall back to a follower
+			rf.isLeader = false
+			rf.isCandidate = false
+		}
+		reply.Term = rf.currentTerm
+		// 1. check whether `args.Term >= rf.currentTerm`
+		// 2. check whether the server's log entry at `args.PrevLogIndex` is `args.PrevLogTerm`
 		if args.Term < rf.currentTerm {
 			reply.Success = false
-		} else if rf.lastLogIndex < args.LastLogIndex || rf.lastLogTerm != args.LastLogTerm {
+		} else if rf.lastLogIndex < args.PrevLogIndex ||
+			(rf.lastLogIndex > 0 && rf.log[args.PrevLogIndex-1].Term != args.PrevLogTerm) {
 			reply.Success = false
 		} else {
 			reply.Success = true
-			rf.validAppendReceived = true
+			// only fall back to a follower if the `AppendEntries` is from the **current** leader
+			// or there was no leader before
+			if rf.currentLeader == -1 || args.LeaderId == rf.currentLeader {
+				rf.validAppendReceived = true
+			}
 			// TODO: 3. modify `rf.log` and other fields for non heartbeats
 			// 4. update `rf.commitIndex`
 			if args.LeaderCommit > rf.commitIndex {
@@ -249,13 +268,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 					rf.commitIndex = args.LeaderCommit
 				}
 			}
-		}
-		// 5. check whether the own term is outdated
-		if args.Term > rf.currentTerm {
-			rf.currentTerm = args.Term
-			// fall back to a follower
-			rf.isLeader = false
-			rf.isCandidate = false
 		}
 		DPrintf("Server %d receives an AppendEntries request from leader %d, args: %v, reply: %v", rf.me, args.LeaderId, args, reply)
 	}
@@ -297,7 +309,6 @@ func (rf *Raft) sendRequestVote(server int) {
 	// 2. vote for self
 	rf.votedFor = rf.me
 	// 3. reset election timer: handled in `ticker`
-
 	args.Term = rf.currentTerm
 	args.CandidateId = rf.me
 	args.LastLogIndex = rf.lastLogIndex
@@ -314,7 +325,7 @@ func (rf *Raft) sendRequestVote(server int) {
 			rf.isLeader = false
 			rf.isCandidate = false
 			DPrintf("Candidate %d falls back to a follower due to the outdated term", rf.me)
-		} else if reply.VoteGranted {
+		} else if reply.Success {
 			rf.receivedVotes += 1
 			DPrintf("Candidate %d receives a vote from server %d", rf.me, server)
 		}
@@ -323,19 +334,23 @@ func (rf *Raft) sendRequestVote(server int) {
 }
 
 // A server sends an sendAppendEntries RPC to another server
-func (rf *Raft) sendAppendEntries(server int) {
+func (rf *Raft) sendAppendEntries(server int, entries []*KVCommand) {
 	args := AppendEntriesArgs{}
 	reply := AppendEntriesReply{}
 
 	rf.mu.Lock()
-
 	args.Term = rf.currentTerm
 	args.LeaderId = rf.me
-	args.LastLogIndex = rf.lastLogIndex
-	args.LastLogTerm = rf.lastLogTerm
+	args.PrevLogIndex = rf.lastLogIndex
+	args.PrevLogTerm = rf.lastLogTerm
 	args.LeaderCommit = rf.commitIndex
-
+	// cannot defer unlock when ther is `Call`
 	rf.mu.Unlock()
+
+	//TODO: handle the log entries
+	args.Entries = entries
+	// if `rf.lastLogIndex >= rf.nextIndex[server]`,
+	// send the log entries starting at `rf.nextIndex[server]`
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", &args, &reply)
 	if ok {
@@ -347,6 +362,8 @@ func (rf *Raft) sendAppendEntries(server int) {
 			rf.isLeader = false
 			rf.isCandidate = false
 			DPrintf("Leader %d falls back to a follower due to the outdated term", rf.me)
+		} else {
+			//TODO: handle the log entries
 		}
 		rf.mu.Unlock()
 	}
@@ -358,7 +375,6 @@ func (rf *Raft) becomeLeader() {
 	defer rf.mu.Unlock()
 
 	rf.isLeader = true
-	rf.votedFor = -1 // the vote is not outdated
 
 	// initialize the leader's state
 	rf.nextIndex = make([]int, len(rf.peers))
@@ -370,6 +386,19 @@ func (rf *Raft) becomeLeader() {
 	for i := range rf.matchIndex {
 		rf.matchIndex[i] = 0
 	}
+}
+
+// Update the server to be a candidate
+func (rf *Raft) becomeCandidate() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	rf.isLeader = false
+	rf.isCandidate = true
+	rf.currentTerm += 1
+	// consider as no leader currently
+	rf.currentLeader = -1
+
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -419,70 +448,72 @@ func (rf *Raft) ticker() {
 	for rf.killed() == false {
 
 		// Your code here (3A)
-
 		// if the server is a leader, send the heartbeats periodically
 		rf.mu.Lock()
 		isLeader := rf.isLeader
 		isCandidate := rf.isCandidate
+		rf.votedFor = -1 // clear the old vote
+		// a leader remains a leader until sth goes wrong,
+		// but a candidate reset in every round
+		rf.isCandidate = false
 		rf.mu.Unlock()
 
 		if isLeader {
-			// a leader is never replaced unless it is killed
 			for i := 0; i < len(rf.peers); i++ {
 				if i == rf.me {
 					continue
 				}
 				// send the heartbeat
-				go rf.sendAppendEntries(i)
+				go rf.sendAppendEntries(i, nil)
 			}
 			time.Sleep(heartbeatPeriod)
+			continue
 
 		} else if isCandidate {
-			// wait to gather enough votes
-			electionTimeout := 300 + (rand.Int63() % 1000)
-			time.Sleep(time.Duration(electionTimeout) * time.Millisecond)
+
+			voteWaitTimeout := 10 + (rand.Int63() % 200)
+			time.Sleep(time.Duration(voteWaitTimeout) * time.Millisecond)
 
 			// get the current states
 			rf.mu.Lock()
 			validAppendReceived := rf.validAppendReceived
 			receivedVotes := rf.receivedVotes
 			// reset
+			rf.voteGranted = false
 			rf.validAppendReceived = false
-			rf.receivedVotes = 0
+			rf.receivedVotes = 1
 			rf.mu.Unlock()
 
 			// first check whether a new leader exists
 			if validAppendReceived {
 				// fall back to a follower
-				rf.isCandidate = false
-				rf.mu.Lock()
-				rf.votedFor = -1 // clear the old vote
-				rf.mu.Unlock()
-				DPrintf("Candidate %d falls back to a follower", rf.me)
+				DPrintf("Candidate %d falls back to a follower due to seeing a new leader", rf.me)
+				continue
 			} else {
 				// check the votes
-				if receivedVotes >= (len(rf.peers)-1)/2 {
+				if receivedVotes > len(rf.peers)/2 {
 					// becomes a leader
 					rf.becomeLeader()
 					DPrintf("Candidate %d becomes a leader with %d votes", rf.me, receivedVotes)
+					continue
 				} else {
 					// remain as a candidate
-					DPrintf("Candidate %d remains a candidate", rf.me)
-					// resends the vote requests
-					rf.mu.Lock()
-					rf.currentTerm += 1
-					rf.mu.Unlock()
+					rf.becomeCandidate()
+					DPrintf("Candidate %d remains a candidate due to not enough votes", rf.me)
+					// send vote requests
 					for i := 0; i < len(rf.peers); i++ {
 						if i == rf.me {
 							continue
 						}
 						go rf.sendRequestVote(i)
 					}
+					continue
 				}
 			}
+
 		} else { // the server is a follower
-			// wait for the election timeout
-			electionTimeout := 300 + (rand.Int63() % 500)
+
+			electionTimeout := 500 + (rand.Int63() % 800)
 			time.Sleep(time.Duration(electionTimeout) * time.Millisecond)
 
 			// get the current states
@@ -490,32 +521,26 @@ func (rf *Raft) ticker() {
 			validAppendReceived := rf.validAppendReceived
 			voteGranted := rf.voteGranted
 			// reset
-			rf.validAppendReceived = false
 			rf.voteGranted = false
+			rf.validAppendReceived = false
+			rf.receivedVotes = 1
 			rf.mu.Unlock()
-
 			if validAppendReceived || voteGranted {
 				// remain as a follower
 				DPrintf("Follower %d remains a follower", rf.me)
-				// reset the `votedFor` since it is now outdated
-				rf.mu.Lock()
-				rf.votedFor = -1
-				rf.mu.Unlock()
 				continue
 			} else {
 				// become a candidate start an election
-				rf.isCandidate = true
+				rf.becomeCandidate()
 				DPrintf("Follower %d becomes a candidate", rf.me)
-				// incremnt the term before sending the vote requests
-				rf.mu.Lock()
-				rf.currentTerm += 1
-				rf.mu.Unlock()
+				// send vote requests
 				for i := 0; i < len(rf.peers); i++ {
 					if i == rf.me {
 						continue
 					}
-					go rf.sendRequestVote(i)
+					rf.sendRequestVote(i)
 				}
+				continue
 			}
 		}
 	}
@@ -545,9 +570,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// first log index is 1
 	rf.commitIndex = 0
 	rf.lastApplied = 0
-	rf.lastLogIndex = 0
 	rf.nextIndex = nil
 	rf.matchIndex = nil
+
+	rf.lastLogIndex = 0
+	rf.lastLogTerm = 0
+	rf.receivedVotes = 1
+	rf.voteGranted = false
+	rf.currentLeader = -1
+	rf.validAppendReceived = false
+	rf.isLeader = false
+	rf.isCandidate = false
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
