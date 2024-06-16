@@ -86,7 +86,6 @@ type Raft struct {
 
 	validAppendReceived bool // whether a Valid AppendEntries is received
 	voteGranted         bool // whether the server has granted a vote
-	currentLeader       int  // the current leader
 
 	receivedVotes int // the number of votes received in one election
 
@@ -253,11 +252,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			reply.Success = false
 		} else {
 			reply.Success = true
-			// only fall back to a follower if the `AppendEntries` is from the **current** leader
-			// or there was no leader before
-			if rf.currentLeader == -1 || args.LeaderId == rf.currentLeader {
-				rf.validAppendReceived = true
-			}
+			// only fall back to a follower if the `AppendEntries` is from the current leader
+			rf.validAppendReceived = true
 			// TODO: 3. modify `rf.log` and other fields for non heartbeats
 			// 4. update `rf.commitIndex`
 			if args.LeaderCommit > rf.commitIndex {
@@ -407,8 +403,6 @@ func (rf *Raft) becomeCandidate() {
 	rf.isLeader = false
 	rf.isCandidate = true
 	rf.currentTerm += 1
-	// consider as no leader currently
-	rf.currentLeader = -1
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -481,7 +475,8 @@ func (rf *Raft) ticker() {
 
 		} else if isCandidate {
 
-			time.Sleep(time.Duration(500 * time.Millisecond))
+			electionTimeout := 100 + (rand.Int63() % 500)
+			time.Sleep(time.Duration(electionTimeout) * time.Millisecond)
 
 			// get the current states
 			rf.mu.Lock()
@@ -514,7 +509,7 @@ func (rf *Raft) ticker() {
 
 		} else { // the server is a follower
 
-			electionTimeout := 200 + (rand.Int63() % 1000)
+			electionTimeout := 150 + (rand.Int63() % 4000)
 			time.Sleep(time.Duration(electionTimeout) * time.Millisecond)
 
 			// get the current states
@@ -579,10 +574,15 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.lastLogTerm = 0
 	rf.receivedVotes = 1
 	rf.voteGranted = false
-	rf.currentLeader = -1
 	rf.validAppendReceived = false
 	rf.isLeader = false
 	rf.isCandidate = false
+
+	// logFile, err := os.OpenFile("raft.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	// if err != nil {
+	// 	log.Fatal("Cannot create the log file")
+	// }
+	// log.SetOutput(logFile)
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())

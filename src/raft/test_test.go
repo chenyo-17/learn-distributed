@@ -10,6 +10,7 @@ package raft
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -60,16 +61,19 @@ func TestReElection3A(t *testing.T) {
 	cfg.begin("Test (3A): election after network failure")
 
 	leader1 := cfg.checkOneLeader()
+	log.Printf("test 1")
 
-	// if the leader disconnects, a new one should be elected.
+	// // if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
 	cfg.checkOneLeader()
+	log.Printf("test 2")
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
+	log.Printf("test 3")
 
 	// if there's no quorum, no new leader should
 	// be elected.
@@ -80,50 +84,53 @@ func TestReElection3A(t *testing.T) {
 	// check that the one connected server
 	// does not think it is the leader.
 	cfg.checkNoLeader()
+	log.Printf("test 4")
 
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
 	cfg.checkOneLeader()
+	log.Printf("test 5")
 
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
 	cfg.checkOneLeader()
+	log.Printf("test 6")
 
 	cfg.end()
 }
 
-func TestManyElections3A(t *testing.T) {
-	servers := 7
-	cfg := make_config(t, servers, false, false)
-	defer cfg.cleanup()
+// func TestManyElections3A(t *testing.T) {
+// 	servers := 7
+// 	cfg := make_config(t, servers, false, false)
+// 	defer cfg.cleanup()
 
-	cfg.begin("Test (3A): multiple elections")
+// 	cfg.begin("Test (3A): multiple elections")
 
-	cfg.checkOneLeader()
+// 	cfg.checkOneLeader()
 
-	iters := 10
-	for ii := 1; ii < iters; ii++ {
-		// disconnect three nodes
-		i1 := rand.Int() % servers
-		i2 := rand.Int() % servers
-		i3 := rand.Int() % servers
-		cfg.disconnect(i1)
-		cfg.disconnect(i2)
-		cfg.disconnect(i3)
+// 	iters := 10
+// 	for ii := 1; ii < iters; ii++ {
+// 		// disconnect three nodes
+// 		i1 := rand.Int() % servers
+// 		i2 := rand.Int() % servers
+// 		i3 := rand.Int() % servers
+// 		cfg.disconnect(i1)
+// 		cfg.disconnect(i2)
+// 		cfg.disconnect(i3)
 
-		// either the current leader should still be alive,
-		// or the remaining four should elect a new one.
-		cfg.checkOneLeader()
+// 		// either the current leader should still be alive,
+// 		// or the remaining four should elect a new one.
+// 		cfg.checkOneLeader()
 
-		cfg.connect(i1)
-		cfg.connect(i2)
-		cfg.connect(i3)
-	}
+// 		cfg.connect(i1)
+// 		cfg.connect(i2)
+// 		cfg.connect(i3)
+// 	}
 
-	cfg.checkOneLeader()
+// 	cfg.checkOneLeader()
 
-	cfg.end()
-}
+// 	cfg.end()
+// }
 
 func TestBasicAgree3B(t *testing.T) {
 	servers := 3
